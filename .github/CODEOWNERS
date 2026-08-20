@@ -1,0 +1,15 @@
+# Default owners for everything in the repo.
+*       @SuperInstance/quilt-maintainers
+
+# Quilt engine core needs extra scrutiny.
+/src/swarm-engine.ts  @SuperInstance/quilt-maintainers
+/src/swarm-adapter.ts @SuperInstance/quilt-maintainers
+
+# Docs are owned by the docs team.
+/docs/      @SuperInstance/quilt-docs
+/examples/  @SuperInstance/quilt-docs
+/README.md  @SuperInstance/quilt-docs
+
+# Security-sensitive files.
+/SECURITY.md  @SuperInstance/quilt-security
+/.github/     @SuperInstance/quilt-maintainers

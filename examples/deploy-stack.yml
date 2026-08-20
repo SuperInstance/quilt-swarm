@@ -1,0 +1,45 @@
+# Example Quilt sheet for quilt-swarm.
+#
+# Each row is a service; cells describe parts of the service spec.
+# Special prefixes:
+#   =    formula cell — materialised as a sidecar + config
+#   !vault  vault cell — materialised as a Docker secret
+#   !net    network cell — materialised as an overlay network
+#
+# Plain text in the A column is the service name; in the B column
+# it is the container image. Other cells become env vars, labels,
+# secrets, or network attachments as documented in the README.
+
+name: hello-world
+
+rows:
+  # ─── Frontend (nginx) ──────────────────────────────────────────
+  - A1: frontend
+    A2: nginx:1.27
+    B1: "Welcome to the Quilt-Swarm demo"
+    C1: "80"
+    C2: "8080"
+    D1: =env("GREETING", "Hello, world")
+    E1: !vault api-token
+    F1: !net quilt-overlay
+
+  # ─── API service (Node 20) ─────────────────────────────────────
+  - A1: api
+    A2: node:20-alpine
+    B1: "JSON API for the Quilt demo"
+    C1: "3000"
+    C2: "0.0.0.0"
+    D1: =sha256(now)
+    D2: =env("PORT", "3000")
+    E1: !vault database-url
+    E2: !vault jwt-secret
+    F1: !net quilt-overlay
+    F2: !net quilt-observability
+
+  # ─── Database (postgres) ───────────────────────────────────────
+  - A1: db
+    A2: postgres:16-alpine
+    B1: "Postgres for the Quilt demo"
+    C1: "5432"
+    E1: !vault database-url
+    F1: !net quilt-overlay

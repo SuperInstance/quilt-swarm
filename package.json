@@ -1,0 +1,76 @@
+{
+  "name": "quilt-swarm",
+  "version": "0.1.0",
+  "description": "Quilt as a unified control plane over Docker Swarm clusters. One-command Swarm-to-Quilt migration. Encrypted overlay networking.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "quilt-swarm": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test test/*.test.ts",
+    "test:watch": "tsx --test --watch test/*.test.ts",
+    "lint": "eslint --ext .ts src test",
+    "lint:fix": "eslint --ext .ts src test --fix",
+    "clean": "rimraf dist coverage",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/cli.js"
+  },
+  "keywords": [
+    "quilt",
+    "swarm",
+    "docker",
+    "docker-swarm",
+    "orchestration",
+    "control-plane",
+    "overlay-network",
+    "encrypted",
+    "migration",
+    "typescript"
+  ],
+  "author": "SuperInstance <hello@superinstance.dev>",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "dockerode": "^4.0.2",
+    "yaml": "^2.5.1"
+  },
+  "peerDependencies": {
+    "@quilt/core": "^0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@quilt/core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.29",
+    "@types/node": "^20.14.0",
+    "@typescript-eslint/eslint-plugin": "^7.13.0",
+    "@typescript-eslint/parser": "^7.13.0",
+    "eslint": "^8.57.0",
+    "rimraf": "^5.0.7",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SuperInstance/quilt-swarm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SuperInstance/quilt-swarm/issues"
+  },
+  "homepage": "https://github.com/SuperInstance/quilt-swarm#readme"
+}
