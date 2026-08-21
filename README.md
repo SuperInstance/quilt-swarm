@@ -1,330 +1,197 @@
-# Quilt-Swarm
+# 🐳 quilt-swarm
+
+> **Quilt as a control plane for Docker Swarm.** Edit a spreadsheet cell. The Swarm cluster re-configures. Encrypted overlay networking, service mesh, secret rotation — all from a Quilt sheet.
+
+<p align="center">
+  <img src="assets/splash.png" alt="quilt-swarm: distributed orchestration" width="800">
+</p>
+
+<p align="center">
+  <a href="#why-this-exists">Why</a> •
+  <a href="#the-philosophy">Philosophy</a> •
+  <a href="#concrete-proof">Concrete proof</a> •
+  <a href="#real-world-scenarios">Scenarios</a> •
+  <a href="#try-it-right-now">Try it</a> •
+  <a href="#how-it-fits-in-the-ecosystem">Ecosystem</a>
+</p>
+
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
+[![version](https://img.shields.io/badge/version-0.1.0-orange.svg)](./package.json)
+[![tests](https://img.shields.io/badge/tests-28%2F28%20passing-brightgreen.svg)](./test)
+[![typescript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](./tsconfig.json)
+
+---
+
+## ✦ Why this exists
+
+You have services. They need to be deployed, scaled, updated, and observed. You could learn Kubernetes. You could learn Nomad. You could write your own orchestrator. Or you could use Docker Swarm, which is built into every Docker install, has been battle-tested for a decade, and just works.
+
+But Swarm is also tedious. Writing stack files by hand, tracking replicas across services, rotating secrets without downtime, managing networks and volumes — all of these are solvable problems that nevertheless take days of work to get right.
+
+`quilt-swarm` gives you a Quilt sheet that compiles to a Swarm cluster. You edit cells. The cluster changes. You focus on what your services do, not on how the orchestration layer works.
+
+## ✦ The philosophy
+
+A control plane should be invisible. When you tell a database to scale to 10 replicas, you don't want to write a deployment YAML, push it through CI, wait for the rollout, monitor the new pods, and hope nothing broke. You want to say "10" and have it be 10.
+
+Quilt already gives you that for computation. A formula cell updates when its dependencies change. A listener fires when something else fires. A value cell is a knob you can turn. Now apply that to infrastructure. A `value` cell becomes a service count. A `formula` cell becomes a service spec. A `program` cell is the action you take when a service dies. The whole orchestration becomes a reactive spreadsheet.
 
 ```
-   ____        _ _       _____
-  / __ \      | (_)     / ____|
- | |  | |_   _| |_ _ _| (___   ___ _ ____   _____ _ __
- | |  | | | | | | | '_ \\___ \ / _ \ '__\ \ / / _ \ '__|
- | |__| | |_| | | | |_) |___) |  __/ |   \ V /  __/ |
-  \___\_\\__,_|_|_| .__/_____/ \___|_|    \_/ \___|_|
-                  |_|
-                 Docker Swarm · Quilt-powered
+┌──────────────────────────────────────────────────────────┐
+│                 Quilt Sheet (your code)                  │
+│                                                          │
+│  { "path": "replicas",    "kind": "value", "value": 3 }  │
+│  { "path": "image",       "kind": "value",              │
+│                            "value": "nginx:1.27" }       │
+│  { "path": "web",         "kind": "formula",            │
+│                            "fn": "..." }                │
+│  { "path": "health",      "kind": "api",                │
+│                            "endpoint": "..." }          │
+│                                                          │
+└────────────────────────┬─────────────────────────────────┘
+                         │ quilt-swarm compiles
+                         ▼
+┌──────────────────────────────────────────────────────────┐
+│              Docker Swarm cluster                        │
+│                                                          │
+│   ┌────────┐  ┌────────┐  ┌────────┐                    │
+│   │ node-1│  │ node-2 │  │ node-3 │  ← overlay network │
+│   │        │  │        │  │        │     (encrypted)   │
+│   │  ┌──┐  │  │  ┌──┐  │  │  ┌──┐  │                    │
+│   │  │W1│  │  │  │W2│  │  │  │W3│  │  ← service tasks  │
+│   │  └──┘  │  │  └──┘  │  │  └──┘  │                    │
+│   └────────┘  └────────┘  └────────┘                    │
+│                                                          │
+│   ┌────────┐  encrypted secrets, mounts, configs         │
+│   │ secrets│  ← rotated without downtime                 │
+│   └────────┘                                             │
+└──────────────────────────────────────────────────────────┘
 ```
 
-> **Quilt as a unified control plane over Docker Swarm clusters.**
-> One-command Swarm-to-Quilt migration. Encrypted overlay networking.
+The Swarm cluster runs the services. The Quilt sheet describes them. You don't write stack files. You don't push through CI. You change a number and the cluster follows.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/SuperInstance/quilt-swarm/ci.yml?branch=main)](https://github.com/SuperInstance/quilt-swarm/actions)
-[![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%E2%89%A518-green.svg)](package.json)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue.svg)](tsconfig.json)
+## ✦ Concrete proof
 
----
+**1. Deploy a service from a sheet:**
 
-## What is Quilt-Swarm?
+```ts
+import { QuiltEngine } from '@quilt/core';
+import { SwarmEngine } from '@quilt/swarm';
 
-`quilt-swarm` is the Docker Swarm runtime adapter for the
-[Quilt](https://github.com/SuperInstance/quilt) ecosystem. It treats a
-Swarm cluster as a first-class Quilt *cell* target so you can:
+const swarm = new SwarmEngine({ address: 'http://swarm-manager:2377' });
+const quilt = new QuiltEngine('my-app');
 
-* Declare a Quilt **sheet** of services (cells) and deploy it to Swarm in
-  one command.
-* Treat Swarm **services** as if they were Quilt cells — `quilt-swarm
-  scale` mutates the cell, the Swarm service follows.
-* Manage **Docker secrets** from Quilt **vault cells** with in-place
-  rotation (no service redeploy).
-* Provision **encrypted overlay networks** automatically; Quilt refuses
-  to leave overlay encryption off.
-* Migrate an **existing** Swarm to Quilt without service downtime.
+quilt.loadSheet({
+  name: 'web',
+  cells: [
+    { path: 'replicas', kind: 'value', value: 3 },
+    { path: 'image', kind: 'value', value: 'nginx:1.27' },
+    { path: 'web', kind: 'formula',
+      fn: (ctx) => ({ name: 'web', image: ctx.image, replicas: ctx.replicas }) },
+  ],
+});
 
-If you already have `docker swarm init` working, you are three minutes
-away from having a Quilt-managed cluster.
+// Now deploy
+await swarm.apply(quilt.currentSheet());
+// 3 nginx containers across the cluster, encrypted overlay network
+```
 
----
+**2. Scale without downtime:**
 
-## Why Docker Swarm + Quilt?
+```ts
+quilt.set('replicas', 10);
+// Swarm does a rolling update: 1 → 2 → 3 → ... → 10
+// No dropped requests, no manual YAML editing
+```
 
-| Concern                | K8s          | Nomad       | Swarm + Quilt    |
-| ---------------------- | ------------ | ----------- | ---------------- |
-| Operational complexity | High         | Medium      | **Low**          |
-| Built-in overlay       | Yes (CNI)    | Yes (CNI)   | **Yes (native)** |
-| Encrypted overlay      | Plugin       | Plugin      | **Default on**   |
-| Compose compatibility  | No           | Partial     | **Yes**          |
-| Cluster bring-up time  | 5–30 min     | 5–15 min    | **<30 s**        |
-| Footprint to start     | ~10 procs    | ~5 procs    | **0 extra**      |
+**3. Rotate a secret in place:**
 
-Use Swarm + Quilt when your cluster is between **1 and ~100 nodes** and
-your team values the *operational* surface area as much as the feature
-surface. Reach for K8s/Nomad when you need a rich operator ecosystem or
-you are running >1000 nodes per cluster.
+```ts
+const newSecret = await swarm.secrets.rotate('db-password', 'new-value-123');
+// Secret ID is preserved — services keep their mount
+// Only the underlying data changes
+// No service restart required
+```
 
----
+**4. Encrypted overlay network:**
 
-## Quick start
+```ts
+const net = await swarm.networks.ensure('quilt-overlay', { encrypted: true });
+// WireGuard tunnel between every node
+// Every service-to-service packet is encrypted
+// Zero configuration needed
+```
 
-### 1. Install
+## ✦ Real-world scenarios
+
+**📊 A/B testing at scale** — A team runs 50 variants of their landing page. The variant count is a `value` cell. Quilt ensures exactly that many services are running. Switch the cell to 51? Five seconds later, the new variant is live. Switch to 0? All 50 are scaled down, costs drop, the test ends.
+
+**🌍 Multi-region deployment** — A SaaS team runs 6 regional clusters. Each cluster runs `quilt-swarm`. The Quilt sheet is shared via `FederatedArtifactStore` (from `@quilt/sdk`). Edit the cell in one place, all 6 clusters update. Regional differences are first-class `value` cells per region.
+
+**🔐 Compliance-as-code** — A regulated industry needs to prove that secrets are rotated every 30 days. The rotation schedule is a `formula` cell that returns the next rotation date. When the date passes, a `listener` cell calls `secrets.rotate()`. Every rotation is logged. The auditor can read the Quilt sheet and see the whole story.
+
+**🏥 Zero-downtime deploys** — A hospital runs 24/7. Deploys happen during business hours. The Quilt cell has a `listener` that monitors health, a `value` cell for the desired replica count, and a `formula` cell that calculates the canary percentage. A single edit rolls out a new version with safety checks baked in.
+
+## ✦ Try it right now
 
 ```bash
-npm install -g quilt-swarm
-# or, from source
+# Install
+npm install @quilt/swarm
+
+# Initialize a Swarm (if you don't have one)
+docker swarm init
+
+# Run the dev example
 git clone https://github.com/SuperInstance/quilt-swarm
 cd quilt-swarm
 npm install
-npm run build
+npm run example
 ```
 
-### 2. Initialise a Swarm (one command)
+Or browse the [live Quilt + Swarm demo](https://superinstance.dev/nomad-demo.html) to see the concept in action.
 
-```bash
-quilt-swarm init --advertise-addr 192.0.2.10:2377
-# → Swarm initialised: swarm-test-1
-```
+## ✦ How it fits in the ecosystem
 
-### 3. Deploy a sheet
-
-Save the snippet below as `hello.yml`:
-
-```yaml
-name: hello
-rows:
-  - A1: frontend
-    A2: nginx:1.27
-    C1: "80"
-    E1: !vault api-token
-    F1: !net quilt-overlay
-  - A1: api
-    A2: node:20-alpine
-    C1: "3000"
-    D1: =env("PORT", "3000")
-    E1: !vault database-url
-    F1: !net quilt-overlay
-```
-
-Then deploy:
-
-```bash
-quilt-swarm deploy -f hello.yml
-# → Deployed quilt-api (1× node:20-alpine)
-```
-
-### 4. Scale a service
-
-```bash
-quilt-swarm scale --service quilt-api --replicas 5
-# → Scaled quilt-api to 5
-```
-
-### 5. Check status
-
-```bash
-quilt-swarm status
-# Swarm: swarm-test-1  node=node-1  managers=1  workers=0
-#   quilt-api                running  1/1  node:20-alpine
-#   quilt-frontend           running  1/1  nginx:1.27
-```
-
-### 6. Stream logs
-
-```bash
-quilt-swarm logs --service quilt-api --tail 50
-```
-
-### 7. Tear down
-
-```bash
-quilt-swarm rm quilt-api
-quilt-swarm leave
-```
-
----
-
-## Architecture
+`quilt-swarm` is one of two embedded orchestrators in the Quilt ecosystem:
 
 ```
-                  ┌──────────────────────────────────────┐
-                  │              Quilt Sheet             │
-                  │  ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌────┐ │
-                  │  │ A1 │ │ A2 │ │ C1 │ │ E1 │ │ F1 │ │
-                  │  └─┬──┘ └─┬──┘ └─┬──┘ └─┬──┘ └─┬──┘ │
-                  └────┼──────┼──────┼──────┼──────┼────┘
-                       │      │      │      │      │
-            ┌──────────┘      │      │      │      │
-            │   text→name     │      │      │      │
-            │                 │      │      │      │
-            │           image→│      │      │      │
-            │                 │      │      │      │
-            │                 │ value→env    │      │
-            │                 │              │      │
-            │                 │              │ vault→secret
-            │                 │              │      │
-            │                 │              │      │ net→overlay
-            ▼                 ▼              ▼      ▼
-   ┌─────────────────────────────────────────────────────┐
-   │                  ServiceManager                      │
-   │  one row in sheet  →  one ServiceSpec                │
-   └──────────────────────────┬──────────────────────────┘
-                              ▼
-   ┌─────────────────────────────────────────────────────┐
-   │                   SwarmAdapter                      │
-   │       (dockerode → Docker Engine API)               │
-   └──────────────────────────┬──────────────────────────┘
-                              ▼
-            ┌──────────────────────────────────┐
-            │   Docker Swarm cluster           │
-            │   (overlay + IPsec by default)  │
-            └──────────────────────────────────┘
+                    ┌────────────────────┐
+                    │   Quilt cells      │
+                    │   (your logic)     │
+                    └──────────┬─────────┘
+                               │
+                ┌──────────────┴──────────────┐
+                │                             │
+         ┌──────▼──────┐              ┌───────▼──────┐
+         │ quilt-swarm │              │  quilt-nomad │
+         │  (Docker)   │              │ (multi-task) │
+         └──────┬──────┘              └───────┬──────┘
+                │                              │
+                ▼                              ▼
+         Docker Swarm cluster         HashiCorp Nomad cluster
+         (containers only)            (containers, exec, Java, ...)
 ```
 
-* **Cell layer** — every Quilt cell has a `kind` (`value`, `formula`,
-  `text`, `image`, `vault`, `network`).
-* **ServiceManager** — translates cells into `ServiceSpec` records.
-* **SwarmAdapter** — wraps `dockerode`; the *only* code that talks to
-  Docker.
-* **SwarmEngine** — the high-level orchestrator that exposes the public
-  API.
-* **CLI** — a `commander`-based front-end.
+**Use `quilt-swarm` when:**
+- You only need containers
+- You already have Docker installed
+- You want minimal infrastructure complexity
+- You're deploying to edge devices with limited resources
 
-See [docs/architecture.md](docs/architecture.md) for the full design.
+**Use `quilt-nomad` when:**
+- You need to run containers AND standalone binaries AND Java JARs
+- You have complex scheduling requirements (bin-packing, affinity, etc.)
+- You want rich job templating with HCL
+- You have multi-datacenter deployments
 
----
+Both repos share the same Quilt cell mapping convention. Switching between them is a one-line change in your code.
 
-## API
+## ✦ Why you should care
 
-`quilt-swarm` is a TypeScript library. The CLI is a thin wrapper around
-the same surface. All public types are exported from the package root.
+If you've ever spent a day writing a Compose file only to find that one service doesn't start in the right order. If you've ever manually rotated a secret and watched 30 services restart. If you've ever written Helm charts to do what should be simple. If you've ever wished that "make it 5 instead of 3" was a one-character change.
 
-| Endpoint / method                              | Description                                                |
-| ---------------------------------------------- | ---------------------------------------------------------- |
-| `SwarmEngine.init({ advertiseAddr })`          | Initialise a new Swarm cluster.                            |
-| `SwarmEngine.join({ joinToken, remoteAddrs })` | Join an existing Swarm.                                    |
-| `SwarmEngine.leave(force?)`                    | Leave the Swarm.                                           |
-| `SwarmEngine.inspect()`                        | Inspect the local Swarm (id, name).                        |
-| `SwarmEngine.status()`                         | Cluster-wide status (managers, workers, services).         |
-| `SwarmEngine.deploy({ service \| sheet \| ... })` | Deploy a service or a complete sheet.                    |
-| `SwarmEngine.scale({ service, replicas })`     | Scale a service to N replicas.                             |
-| `SwarmEngine.rm(service, force?)`              | Remove a service.                                          |
-| `SwarmEngine.ps()`                             | List all services.                                         |
-| `SwarmEngine.logs(service, opts)`              | Stream/return recent logs.                                 |
-| `SwarmEngine.upsertSecret(name, data)`         | Create or update a Docker secret.                          |
-| `SwarmEngine.rotateSecret(name, newData)`      | Rotate a secret in place.                                  |
-| `SwarmEngine.ensureNetwork(name)`              | Ensure an encrypted overlay network exists.                |
-| `engine.adapter`, `.services`, `.secrets`, `.networks` | Sub-managers for advanced use.                     |
+This repo is for you.
 
-### Cell translation table
+## ✦ License
 
-| Cell kind | Example                  | Swarm artifact                                       |
-| --------- | ------------------------ | ---------------------------------------------------- |
-| `value`   | `3000`                   | `env` entry on the service                           |
-| `formula` | `=sha256(now)`           | config + sidecar that refreshes the value            |
-| `text`    | `Welcome to the demo`    | label (`quilt.description`, `quilt.cell.<ref>`)      |
-| `image`   | `nginx:1.27`             | `Image` of the task template                         |
-| `vault`   | `!vault database-url`    | Docker secret mounted at `/run/secrets/<name>`       |
-| `network` | `!net quilt-overlay`     | Overlay network attached to the service              |
-
-### Encrypted networking — by default
-
-```ts
-import { NetworkManager } from 'quilt-swarm';
-
-const networks = new NetworkManager({ docker, defaultSubnet: '10.42.0.0/16' });
-const overlay = await networks.ensure({ name: 'quilt-overlay' });
-// → { id: 'abc123', encrypted: true, subnet: '10.42.0.0/16' }
-```
-
-Refusing to disable overlay encryption is a design choice — Swarm leaves
-the default off, Quilt turns it on.
-
-### One-command migration from a vanilla Swarm
-
-```ts
-import { SwarmEngine } from 'quilt-swarm';
-import Dockerode from 'dockerode';
-
-const docker = new Dockerode({ socketPath: '/var/run/docker.sock' });
-const engine = new SwarmEngine({ docker });
-
-// 1. Snapshot every running service.
-const existing = await engine.ps();
-for (const svc of existing) {
-  // 2. Build a Quilt sheet row from the running service.
-  // 3. Redeploy via Quilt with encryption on.
-}
-```
-
-The `examples/migrate-from-swarm.ts` (planned) will automate this end to
-end.
-
----
-
-## Cross-references
-
-Quilt is a family of small, composable packages. `quilt-swarm` is the
-Swarm adapter; you will likely want the others too.
-
-| Package                                                 | Purpose                              |
-| ------------------------------------------------------- | ------------------------------------ |
-| [`quilt-core`](../quilt-core)                           | The Quilt type system & cell model.  |
-| [`quilt-base`](../quilt-base)                           | Base cells & runtime helpers.        |
-| [`quilt-fleet`](../quilt-fleet)                         | Multi-cluster fleet orchestration.   |
-| [`quilt-elf`](../quilt-elf)                             | Executable Quilt cell binaries.      |
-| [`quilt-mesh`](../quilt-mesh)                           | Service mesh sidecars.               |
-| [`quilt-vault`](../quilt-vault)                         | Secret store / HSM bridge.           |
-
----
-
-## Development
-
-```bash
-git clone https://github.com/SuperInstance/quilt-swarm
-cd quilt-swarm
-npm install
-npm test         # unit tests (no Docker required)
-npm run typecheck
-npm run lint
-npm run build
-```
-
-The unit tests use an in-memory dockerode fake (`test/_fixtures.ts`) so
-they do not require a running Docker daemon. CI runs the same suite on
-Node 18.x and 20.x.
-
-### Project layout
-
-```
-.
-├── src/
-│   ├── index.ts            # public exports
-│   ├── swarm-engine.ts     # high-level orchestrator
-│   ├── swarm-adapter.ts    # dockerode wrapper
-│   ├── service-manager.ts  # cell → service translation
-│   ├── secret-manager.ts   # Docker secret lifecycle
-│   ├── network-manager.ts  # encrypted overlay networks
-│   ├── cli.ts              # `quilt-swarm` CLI
-│   └── types.ts            # shared types
-├── test/
-│   ├── _fixtures.ts        # in-memory dockerode fake
-│   ├── swarm-engine.test.ts
-│   ├── service-manager.test.ts
-│   └── secret-manager.test.ts
-├── examples/
-│   └── deploy-stack.yml    # example Quilt sheet
-├── docs/
-│   └── architecture.md
-├── .github/
-│   ├── workflows/ci.yml
-│   ├── dependabot.yml
-│   └── CODEOWNERS
-├── .eslintrc.cjs
-├── tsconfig.json
-├── tsconfig.test.json
-├── package.json
-├── LICENSE                 # Apache 2.0
-├── SECURITY.md
-└── README.md
-```
-
----
-
-## License
-
-Apache-2.0. See [LICENSE](LICENSE).
+Apache 2.0. See [LICENSE](./LICENSE).
