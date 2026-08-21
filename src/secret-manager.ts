@@ -123,28 +123,31 @@ export class SecretManager {
   /** Rotate an existing secret in-place. */
   async rotate(name: string, newData: string | Buffer): Promise<SecretRecord> {
     const dataBuffer = typeof newData === 'string' ? Buffer.from(newData, 'utf-8') : newData;
-    const existing = await this.findByName(name);
+    // Resolve through the same namespace rule used by upsert() so callers can
+    // pass either the cell ref or the namespaced name.
+    const resolved = this.cache.has(name) ? name : this.resolveName({ ref: name, name, data: newData });
+    const existing = await this.findByName(resolved);
     if (!existing) throw new Error(`Cannot rotate unknown secret: ${name}`);
     const handle = this.docker.getSecret(existing.id);
     const inspected = await handle.inspect();
     await handle.update({
       Version: 0,
       Spec: {
-        Name: name,
+        Name: resolved,
         Data: dataBuffer.toString('base64'),
         Labels: inspected.Spec.Labels,
       },
     });
-    const prev = this.cache.get(name);
+    const prev = this.cache.get(resolved);
     const record: SecretRecord = {
       id: existing.id,
-      name,
+      name: resolved,
       version: bumpVersion(prev?.version),
       createdAt: prev?.createdAt ?? new Date().toISOString(),
       rotatedAt: new Date().toISOString(),
       labels: inspected.Spec.Labels ?? {},
     };
-    this.cache.set(name, record);
+    this.cache.set(resolved, record);
     return record;
   }
 
