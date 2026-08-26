@@ -15,10 +15,11 @@ import { readFile } from 'node:fs/promises';
 
 import { parse as parseYaml } from 'yaml';
 
-import { NetworkManager, type NetworkManagerOptions } from './network-manager.js';
+import { NetworkManager, type NetworkManagerOptions, type NetworkRecord } from './network-manager.js';
 import { SecretManager, type SecretManagerOptions } from './secret-manager.js';
 import { ServiceManager, type ServiceManagerOptions } from './service-manager.js';
 import { SwarmAdapter, type DockerodeLike, type SwarmAdapterOptions } from './swarm-adapter.js';
+import type Dockerode from 'dockerode';
 import type {
   ClusterStatus,
   DeployOptions,
@@ -34,7 +35,7 @@ import type {
 } from './types.js';
 
 export interface SwarmEngineOptions {
-  docker: DockerodeLike;
+  docker: DockerodeLike | Dockerode;
   swarmHandle?: SwarmAdapterOptions['swarmHandle'];
   serviceManager?: ServiceManagerOptions;
   secretManager?: SecretManagerOptions;
@@ -177,8 +178,8 @@ export class SwarmEngine {
       }
     }
     const created = await this.adapter.createService(spec);
-    return { service: spec.name, replicas: spec.replicas ?? 1, image: spec.image };
     void created;
+    return { service: spec.name, replicas: spec.replicas ?? 1, image: spec.image };
   }
 
   private async deployFromSheet(sheet: QuiltSheet): Promise<DeployResult> {
@@ -203,7 +204,6 @@ export class SwarmEngine {
     }
     let last: DeployResult | null = null;
     for (const svc of specs) {
-      // eslint-disable-next-line no-await-in-loop
       last = await this.deployServiceSpec(svc);
     }
     return last!;
@@ -245,7 +245,7 @@ export class SwarmEngine {
   // Networks
   // ────────────────────────────────────────────────────────────
 
-  ensureNetwork(name: string) {
+  ensureNetwork(name: string): Promise<NetworkRecord> {
     return this.networks.ensure({ name });
   }
 }

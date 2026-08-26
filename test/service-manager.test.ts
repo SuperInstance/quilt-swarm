@@ -22,29 +22,29 @@ function sheet(name: string, rows: QuiltRow[]): QuiltSheet {
   return { name, rows, cells: rows.flatMap((r) => Object.values(r)) };
 }
 
-describe('ServiceManager', () => {
-  it('maps a value cell to an environment variable', () => {
+await describe('ServiceManager', async () => {
+  await it('maps a value cell to an environment variable', () => {
     const m = new ServiceManager();
     const spec = m.ingestRow('demo', 0, row([cell('A1', 'text', 'demo-svc'), cell('C1', 'value', '3000')]));
     assert.ok(spec);
     assert.equal(spec?.env?.['C1'], '3000');
   });
 
-  it('maps a formula cell to a config (sidecar reads it)', () => {
+  await it('maps a formula cell to a config (sidecar reads it)', () => {
     const m = new ServiceManager();
     const spec = m.ingestRow('demo', 0, row([cell('A1', 'text', 'demo-svc'), cell('D1', 'formula', '=1+1')]));
     assert.ok(spec);
     assert.ok((spec?.configs ?? []).length >= 1);
   });
 
-  it('maps an image cell to the container image', () => {
+  await it('maps an image cell to the container image', () => {
     const m = new ServiceManager();
     const spec = m.ingestRow('demo', 0, row([cell('A1', 'text', 'demo-svc'), cell('A2', 'image', 'nginx:1.27')]));
     assert.equal(spec?.image, 'nginx:1.27');
     assert.equal(spec?.labels?.['quilt.image.source'], 'A2');
   });
 
-  it('maps a vault cell to a Docker secret', () => {
+  await it('maps a vault cell to a Docker secret', () => {
     const m = new ServiceManager();
     const spec = m.ingestRow('demo', 0, row([
       cell('A1', 'text', 'demo-svc'),
@@ -55,7 +55,7 @@ describe('ServiceManager', () => {
     assert.equal(spec?.env?.['E1_VAULT_REF'], 'database-url');
   });
 
-  it('maps a network cell to a network attachment', () => {
+  await it('maps a network cell to a network attachment', () => {
     const m = new ServiceManager();
     const spec = m.ingestRow('demo', 0, row([
       cell('A1', 'text', 'demo-svc'),
@@ -65,7 +65,7 @@ describe('ServiceManager', () => {
     assert.ok((spec?.networks ?? []).includes('quilt-mesh'));
   });
 
-  it('builds a sidecar spec for a formula cell', () => {
+  await it('builds a sidecar spec for a formula cell', () => {
     const m = new ServiceManager();
     const spec = m.ingestRow('demo', 0, row([cell('A1', 'text', 'demo-svc'), cell('D1', 'formula', '=sha256(now)')]));
     assert.ok(spec);
@@ -74,13 +74,13 @@ describe('ServiceManager', () => {
     assert.equal(sidecar.env?.['QUILT_CELL'], 'D1');
   });
 
-  it('skips empty rows', () => {
+  await it('skips empty rows', () => {
     const m = new ServiceManager();
     const r = m.ingestRow('demo', 0, {});
     assert.equal(r, null);
   });
 
-  it('ingests a full sheet into multiple services', () => {
+  await it('ingests a full sheet into multiple services', () => {
     const m = new ServiceManager();
     const s = sheet('web', [
       row([cell('A1', 'text', 'frontend'), cell('A2', 'image', 'nginx:1.27')]),
@@ -92,7 +92,7 @@ describe('ServiceManager', () => {
     assert.deepEqual(names, ['quilt-backend', 'quilt-frontend']);
   });
 
-  it('lists all cell kinds', () => {
+  await it('lists all cell kinds', () => {
     const m = new ServiceManager();
     const kinds = m.kinds();
     assert.deepEqual(kinds, ['value', 'formula', 'text', 'image', 'vault', 'network']);

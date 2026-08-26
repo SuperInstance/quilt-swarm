@@ -106,6 +106,17 @@ export function createFakeDocker(initial: Partial<FakeDockerState> = {}): { dock
           state.services.delete(id);
           state.tasks = state.tasks.filter((t) => t.ServiceID !== id);
         },
+        update: async (opts: { version?: number } & Record<string, unknown>) => {
+          if (!found) throw new Error('not found');
+          // Spec-update semantics: merge the update payload into the stored spec
+          // (this is how scaling rewrites Mode.Replicated.Replicas).
+          const mode = (opts as { Mode?: { Replicated?: { Replicas?: number } } }).Mode;
+          if (mode) {
+            const stored = found.spec as { Mode?: { Replicated?: { Replicas?: number } } };
+            stored.Mode = { ...stored.Mode, ...mode, Replicated: { ...stored.Mode?.Replicated, ...mode.Replicated } };
+          }
+          return { ID: found.id, UpdatedAt: new Date().toISOString() };
+        },
         scale: async (opts: { Service: string; Version?: number }) => {
           if (!found) throw new Error('not found');
           const mode = (found.spec as { Mode?: { Replicated?: { Replicas?: number } } }).Mode;

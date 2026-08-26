@@ -9,6 +9,7 @@
  */
 
 import type Dockerode from 'dockerode';
+import type { DockerodeLike } from './swarm-adapter.js';
 
 export interface VaultCellSpec {
   ref: string;
@@ -37,7 +38,7 @@ export interface DockerodeSecretLike {
 }
 
 export interface SecretManagerOptions {
-  docker: DockerodeSecretLike | Dockerode;
+  docker: DockerodeSecretLike | DockerodeLike | Dockerode;
   /** Namespace prepended to every secret name (default: `quilt_`). */
   namespace?: string;
 }

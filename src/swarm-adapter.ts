@@ -71,6 +71,7 @@ export interface DockerodeLike {
   getService(id: string): {
     inspect(): Promise<{
       ID: string;
+      Version?: { Index?: number };
       Spec: {
         Name: string;
         TaskTemplate: { ContainerSpec: { Image: string } };
@@ -78,9 +79,8 @@ export interface DockerodeLike {
       };
     }>;
     remove(opts?: { force?: boolean }): Promise<void>;
-    scale(opts: { Service: string; Version?: number }): Promise<{
-      Spec: { Mode?: { Replicated?: { Replicas?: number } } };
-    }>;
+    /** Docker has no service /scale endpoint: scaling is a full spec update. */
+    update(opts: Record<string, unknown>): Promise<unknown>;
   };
   createService(spec: Record<string, unknown>): Promise<{ id: string }>;
   listTasks(opts?: { filters?: string }): Promise<
@@ -134,7 +134,7 @@ export class SwarmAdapter {
     if (!this.docker.swarm) {
       throw new Error('Underlying docker client does not expose swarm()');
     }
-    return this.docker.swarm() as unknown as InternalSwarmHandle;
+    return this.docker.swarm() as InternalSwarmHandle;
   }
 
   // ────────────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ export class SwarmAdapter {
     const swarmSpec = this.buildServiceSpec(spec);
     swarmSpec.Name = spec.name;
     const result = await this.docker.createService(swarmSpec);
-    return { id: (result as { id: string }).id };
+    return { id: result.id };
   }
 
   async listServices(): Promise<ServiceStatus[]> {
@@ -333,9 +333,17 @@ export class SwarmAdapter {
     const target = services[0];
     if (!target) throw new Error(`Service not found: ${service}`);
     const svcHandle = this.docker.getService(target.ID);
-    const version = await svcHandle.inspect().catch(() => undefined as unknown);
-    void version;
-    await svcHandle.scale({ Service: service, Version: 0 } as { Service: string; Version?: number });
+    // The Swarm API has no dedicated scale endpoint: scaling is a service
+    // update that rewrites Mode.Replicated.Replicas at the current version.
+    const current = await svcHandle.inspect();
+    const spec = current.Spec as Record<string, unknown> & {
+      Mode?: { Replicated?: { Replicas?: number } };
+    };
+    await svcHandle.update({
+      version: current.Version?.Index ?? 0,
+      ...spec,
+      Mode: { ...spec.Mode, Replicated: { ...(spec.Mode?.Replicated ?? {}), Replicas: replicas } },
+    });
     return { replicas };
   }
 
@@ -382,15 +390,17 @@ export async function decodeLogStream(
   service: string,
   stream: NodeJS.ReadableStream | Buffer | string | null | undefined,
 ): Promise<LogLine[]> {
-  if (stream == null) return [];
-  let raw: string;
-  if (typeof stream === 'string') raw = stream;
-  else if (Buffer.isBuffer(stream)) raw = stream.toString('utf-8');
+  if (stream === null || stream === undefined) return [];
+  // Keep the payload as bytes: the multiplexed frame headers are binary and
+  // would be corrupted by a premature utf-8 round-trip (multi-byte chars).
+  let raw: Buffer;
+  if (typeof stream === 'string') raw = Buffer.from(stream, 'utf-8');
+  else if (Buffer.isBuffer(stream)) raw = stream;
   else {
-    raw = await new Promise<string>((resolve, reject) => {
+    raw = await new Promise<Buffer>((resolve, reject) => {
       const chunks: Buffer[] = [];
       stream.on('data', (c: Buffer) => chunks.push(c));
-      stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+      stream.on('end', () => resolve(Buffer.concat(chunks)));
       stream.on('error', reject);
     });
   }
@@ -406,24 +416,24 @@ export async function decodeLogStream(
         task: `${service}.${frameIdx}`,
         timestamp: new Date().toISOString(),
         stream: 'stdout',
-        message: raw.slice(offset),
+        message: raw.subarray(offset).toString('utf-8'),
       });
       break;
     }
-    const streamType = raw.charCodeAt(offset);
-    const size = raw.readUInt32BE ? (raw as unknown as Buffer).readUInt32BE(offset + 4) : 0;
+    const streamType = raw[offset];
+    const size = raw.readUInt32BE(offset + 4);
     if (size === 0 || size > raw.length - offset - 8) {
       // Not a framed payload — treat the rest as a single line.
       out.push({
         service,
-        task: `${service}.${frameIdx++}`,
+        task: `${service}.${frameIdx}`,
         timestamp: new Date().toISOString(),
         stream: 'stdout',
-        message: raw.slice(offset + 8),
+        message: raw.subarray(offset + 8).toString('utf-8'),
       });
       break;
     }
-    const payload = raw.slice(offset + 8, offset + 8 + size);
+    const payload = raw.subarray(offset + 8, offset + 8 + size).toString('utf-8');
     out.push({
       service,
       task: `${service}.${frameIdx++}`,

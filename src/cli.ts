@@ -10,7 +10,8 @@
 import { Command } from 'commander';
 
 import { SwarmEngine } from './swarm-engine.js';
-import { DockerodeLike } from './swarm-adapter.js';
+import type { DockerodeLike } from './swarm-adapter.js';
+import type Dockerode from 'dockerode';
 import type {
   DeployOptions,
   InitOptions,
@@ -20,18 +21,17 @@ import type {
 } from './types.js';
 
 /** Build a Docker client from environment variables. */
-async function buildDockerClient(): Promise<DockerodeLike> {
+async function buildDockerClient(): Promise<Dockerode | DockerodeLike> {
   // We dynamically import dockerode so the rest of the CLI can run
   // in environments where the native module is not yet compiled.
   const mod = await import('dockerode');
-  const Dockerode = mod.default ?? (mod as unknown as { Dockerode: unknown }).Dockerode;
-  const DockerCtor = Dockerode as new (opts: Record<string, unknown>) => DockerodeLike;
+  const DockerodeCtor = (mod.default ?? (mod as unknown as { Dockerode: typeof mod.default }).Dockerode);
   const socketPath = process.env['DOCKER_SOCKET_PATH'] ?? '/var/run/docker.sock';
   const host = process.env['DOCKER_HOST'];
   if (host) {
-    return new DockerCtor({ host });
+    return new DockerodeCtor({ host });
   }
-  return new DockerCtor({ socketPath });
+  return new DockerodeCtor({ socketPath });
 }
 
 function buildEngine(): Promise<SwarmEngine> {
@@ -77,7 +77,14 @@ export class QuiltSwarmCLI {
       .option('--default-addr-pool <pool>', 'Default address pool (CIDR list)')
       .option('--subnet-size <size>', 'Default subnet size (bits)')
       .option('--force-new-cluster', 'Force initialisation of an existing cluster')
-      .action(async (flags) => {
+      .action(async (flags: {
+        advertiseAddr: string;
+        listenAddr?: string;
+        dataPathAddr?: string;
+        defaultAddrPool?: string;
+        subnetSize?: string;
+        forceNewCluster?: boolean;
+      }) => {
         const opts: InitOptions = {
           advertiseAddr: String(flags.advertiseAddr),
           listenAddr: flags.listenAddr ? String(flags.listenAddr) : undefined,
@@ -100,7 +107,12 @@ export class QuiltSwarmCLI {
       .requiredOption('--remote <addr>', 'Remote manager address (host:port)')
       .option('--listen-addr <addr>', 'Listen address')
       .option('--advertise-addr <addr>', 'Advertise address')
-      .action(async (flags) => {
+      .action(async (flags: {
+        token: string;
+        remote: string;
+        listenAddr?: string;
+        advertiseAddr?: string;
+      }) => {
         const opts: JoinOptions = {
           joinToken: String(flags.token),
           remoteAddrs: String(flags.remote).split(','),
@@ -116,7 +128,7 @@ export class QuiltSwarmCLI {
       .command('leave')
       .description('Leave the current Swarm cluster')
       .option('--force', 'Force leave even if this is a manager')
-      .action(async (flags) => {
+      .action(async (flags: { force?: boolean }) => {
         const engine = await this.engine$();
         await engine.leave(Boolean(flags.force));
         process.stdout.write('Left swarm.\n');
@@ -129,7 +141,12 @@ export class QuiltSwarmCLI {
       .option('-n, --name <name>', 'Service name (for inline deploys)')
       .option('-i, --image <image>', 'Container image (for inline deploys)')
       .option('-r, --replicas <count>', 'Replica count', '1')
-      .action(async (flags) => {
+      .action(async (flags: {
+        file?: string;
+        name?: string;
+        image?: string;
+        replicas?: string;
+      }) => {
         const opts: DeployOptions = {
           sheetPath: flags.file ? String(flags.file) : undefined,
           name: flags.name ? String(flags.name) : undefined,
@@ -148,7 +165,7 @@ export class QuiltSwarmCLI {
       .description('Scale a service to the specified number of replicas')
       .requiredOption('-s, --service <name>', 'Service name')
       .requiredOption('-r, --replicas <count>', 'Replica count')
-      .action(async (flags) => {
+      .action(async (flags: { service: string; replicas: string }) => {
         const opts: ScaleOptions = {
           service: String(flags.service),
           replicas: Number(flags.replicas),
@@ -162,7 +179,7 @@ export class QuiltSwarmCLI {
       .command('status')
       .description('Print cluster and service status')
       .option('--json', 'Output as JSON')
-      .action(async (flags) => {
+      .action(async (flags: { json?: boolean }) => {
         const engine = await this.engine$();
         const status = await engine.status();
         if (flags.json) {
@@ -199,7 +216,7 @@ export class QuiltSwarmCLI {
       .requiredOption('-s, --service <name>', 'Service name')
       .option('--tail <n>', 'Number of lines from the end', '50')
       .option('--since <ts>', 'Show logs since timestamp (unix seconds)')
-      .action(async (flags) => {
+      .action(async (flags: { service: string; tail: string; since?: string }) => {
         const tail = String(flags.tail);
         const opts: LogsOptions = {
           service: String(flags.service),
@@ -219,7 +236,7 @@ export class QuiltSwarmCLI {
       .description('Remove a service from the cluster')
       .argument('<service>', 'Service name')
       .option('--force', 'Force removal')
-      .action(async (service: string, flags) => {
+      .action(async (service: string, flags: { force?: boolean }) => {
         const engine = await this.engine$();
         await engine.rm(service, Boolean(flags.force));
         process.stdout.write(`Removed ${service}\n`);
@@ -252,7 +269,7 @@ export class QuiltSwarmCLI {
       .description('Ensure an encrypted overlay network exists')
       .argument('<name>', 'Network name')
       .option('--subnet <cidr>', 'Subnet (CIDR)')
-      .action(async (name: string, flags) => {
+      .action(async (name: string, flags: { subnet?: string }) => {
         const engine = await this.engine$();
         const r = await engine.networks.ensure({
           name,

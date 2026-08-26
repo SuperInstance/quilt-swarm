@@ -12,6 +12,7 @@
  */
 
 import type Dockerode from 'dockerode';
+import type { DockerodeLike } from './swarm-adapter.js';
 
 export interface NetworkSpec {
   name: string;
@@ -42,7 +43,7 @@ export interface DockerodeNetworkLike {
 }
 
 export interface NetworkManagerOptions {
-  docker: DockerodeNetworkLike | Dockerode;
+  docker: DockerodeNetworkLike | DockerodeLike | Dockerode;
   /** Default subnet pool (CIDR). Default: 10.128.0.0/16. */
   defaultSubnet?: string;
   /** Force-encrypt every network (default true). */
