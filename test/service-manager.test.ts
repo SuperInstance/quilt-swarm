@@ -69,7 +69,7 @@ await describe('ServiceManager', async () => {
     const m = new ServiceManager();
     const spec = m.ingestRow('demo', 0, row([cell('A1', 'text', 'demo-svc'), cell('D1', 'formula', '=sha256(now)')]));
     assert.ok(spec);
-    const sidecar = m.buildFormulaSidecar(spec!, cell('D1', 'formula', '=sha256(now)'));
+    const sidecar = m.buildFormulaSidecar(spec, cell('D1', 'formula', '=sha256(now)'));
     assert.equal(sidecar.labels?.['quilt.role'], 'formula-sidecar');
     assert.equal(sidecar.env?.['QUILT_CELL'], 'D1');
   });
