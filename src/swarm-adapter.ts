@@ -121,7 +121,7 @@ export class SwarmAdapter {
 
   constructor(options: SwarmAdapterOptions) {
     this.docker = options.docker as DockerodeLike;
-    this.swarmHandle = options.swarmHandle as InternalSwarmHandle | undefined;
+    this.swarmHandle = options.swarmHandle;
   }
 
   /** Return the raw dockerode handle (for advanced users / tests). */
@@ -134,7 +134,7 @@ export class SwarmAdapter {
     if (!this.docker.swarm) {
       throw new Error('Underlying docker client does not expose swarm()');
     }
-    return this.docker.swarm() as InternalSwarmHandle;
+    return this.docker.swarm();
   }
 
   // ────────────────────────────────────────────────────────────
